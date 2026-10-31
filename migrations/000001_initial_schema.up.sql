@@ -1,0 +1,2 @@
+-- SUPERSEDED: This monolithic schema migration has been modularized into 000001_create_notification_recipients through 000013_create_idempotency_keys.
+-- Please delete this file: Remove-Item notification-service/migrations/000001_initial_schema.*

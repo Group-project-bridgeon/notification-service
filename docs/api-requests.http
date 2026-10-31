@@ -1,0 +1,462 @@
+### Variables
+@baseUrl = http://localhost:8085
+@authToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+@devUserId = 11111111-1111-1111-1111-111111111111
+@adminUserId = 99999999-9999-9999-9999-999999999999
+@notificationId = 7b8e1460-63bf-4787-8e68-07df95a5f782
+@internalToken = internal-dev-token
+
+### 1. Health - Liveness Probe
+GET {{baseUrl}}/health/live
+
+### 2. Health - Readiness Probe
+GET {{baseUrl}}/health/ready
+
+### 3. Health - Service Version
+GET {{baseUrl}}/health/version
+
+### 4. Public - List Notifications (Paginated & Filtered)
+GET {{baseUrl}}/notifications?page=1&page_size=20&sort=-created_at&status=unread
+Authorization: Bearer {{authToken}}
+X-Dev-User-Id: {{devUserId}}
+X-Dev-Roles: employee
+
+### 5. Public - Get Unread Count Breakdown
+GET {{baseUrl}}/notifications/unread-count
+Authorization: Bearer {{authToken}}
+X-Dev-User-Id: {{devUserId}}
+X-Dev-Roles: employee
+
+### 6. Public - Get Notification by ID
+GET {{baseUrl}}/notifications/{{notificationId}}
+Authorization: Bearer {{authToken}}
+X-Dev-User-Id: {{devUserId}}
+X-Dev-Roles: employee
+
+### 7. Public - Mark Notification as Read
+POST {{baseUrl}}/notifications/{{notificationId}}/read
+Authorization: Bearer {{authToken}}
+X-Dev-User-Id: {{devUserId}}
+X-Dev-Roles: employee
+
+### 8. Public - Revert Notification to Unread
+POST {{baseUrl}}/notifications/{{notificationId}}/unread
+Authorization: Bearer {{authToken}}
+X-Dev-User-Id: {{devUserId}}
+X-Dev-Roles: employee
+
+### 9. Public - Archive Notification
+POST {{baseUrl}}/notifications/{{notificationId}}/archive
+Authorization: Bearer {{authToken}}
+X-Dev-User-Id: {{devUserId}}
+X-Dev-Roles: employee
+
+### 10. Public - Mark All Notifications as Read (Optional Category Filter)
+POST {{baseUrl}}/notifications/read-all
+Authorization: Bearer {{authToken}}
+X-Dev-User-Id: {{devUserId}}
+X-Dev-Roles: employee
+Content-Type: application/json
+
+{
+  "category": "approval"
+}
+
+### 11. Public - Get Notification Preferences
+GET {{baseUrl}}/me/notification-preferences
+Authorization: Bearer {{authToken}}
+X-Dev-User-Id: {{devUserId}}
+X-Dev-Roles: employee
+
+### 12. Public - Update Notification Preferences
+PUT {{baseUrl}}/me/notification-preferences
+Authorization: Bearer {{authToken}}
+X-Dev-User-Id: {{devUserId}}
+X-Dev-Roles: employee
+Content-Type: application/json
+
+{
+  "channels": {
+    "in_app": {
+      "approval": true,
+      "purchasing": true,
+      "inventory": true,
+      "security": true,
+      "saga": true
+    },
+    "email": {
+      "approval": true,
+      "purchasing": true,
+      "inventory": false,
+      "security": true
+    }
+  }
+}
+
+### 13. Admin - List Notification Rules (Guarded by admin role)
+GET {{baseUrl}}/admin/notification-rules
+Authorization: Bearer {{authToken}}
+X-Dev-User-Id: {{adminUserId}}
+X-Dev-Roles: admin
+
+### 14. Internal - Ingest Domain Event (Dev / Test)
+POST {{baseUrl}}/internal/events
+X-Internal-Token: {{internalToken}}
+Content-Type: application/json
+
+{
+  "event_id": "4b6c3109-17c3-4e4b-97e3-05ec2c6ef6e1",
+  "event_type": "sales_order.held_for_credit_approval",
+  "event_version": "1.0",
+  "occurred_at": "2026-10-17T10:00:00Z",
+  "producer": "sales-service",
+  "aggregate_type": "sales_order",
+  "aggregate_id": "9d1c08be-2415-46aa-bd08-8e6ca6f0e495",
+  "payload": {
+    "order_no": "SO-2026-8801",
+    "customer_name": "Acme Industrial",
+    "total": "18500.00",
+    "currency": "USD"
+  }
+}
+
+### 15. Issue SSE Stream Ticket
+POST {{baseUrl}}/notifications/stream-ticket
+Authorization: Bearer {{authToken}}
+X-Dev-User-Id: {{userId}}
+Content-Type: application/json
+
+### 16. Connect to SSE Stream (Using Single-Use Ticket)
+# Replace the ticket query parameter with the ticket value obtained from #15
+GET {{baseUrl}}/notifications/stream?ticket=st_example_ticket_value
+Accept: text/event-stream
+
+### 17. Admin - Get Email Settings
+GET {{baseUrl}}/admin/email-settings
+Authorization: Bearer {{authToken}}
+X-Dev-User-Id: {{adminUserId}}
+X-Dev-Roles: admin
+
+### 18. Admin - Update Email Settings
+PUT {{baseUrl}}/admin/email-settings
+Authorization: Bearer {{authToken}}
+X-Dev-User-Id: {{adminUserId}}
+X-Dev-Roles: admin
+Content-Type: application/json
+
+{
+  "provider": "smtp",
+  "host": "smtp.example.com",
+  "port": 587,
+  "username": "smtp_mailer",
+  "password": "secret_password",
+  "from_name": "ERP Notification Service",
+  "from_address": "notifications@example.com",
+  "reply_to": "support@example.com",
+  "tls_mode": "starttls",
+  "daily_limit": 10000,
+  "enabled": true
+}
+
+### 19. Admin - Test Email Settings
+POST {{baseUrl}}/admin/email-settings/test
+Authorization: Bearer {{authToken}}
+X-Dev-User-Id: {{adminUserId}}
+X-Dev-Roles: admin
+Content-Type: application/json
+
+{
+  "to": "admin@example.com"
+}
+
+### 20. Email - List Templates (Admin or Manager)
+GET {{baseUrl}}/email/templates
+Authorization: Bearer {{authToken}}
+X-Dev-User-Id: {{devUserId}}
+X-Dev-Roles: manager
+
+### 21. Email - Get Template by Key
+GET {{baseUrl}}/email/templates/auth.verify_email_otp
+Authorization: Bearer {{authToken}}
+X-Dev-User-Id: {{devUserId}}
+X-Dev-Roles: manager
+
+### 22. Email - Create New Template Version (Admin only)
+PUT {{baseUrl}}/email/templates/auth.verify_email_otp
+Authorization: Bearer {{authToken}}
+X-Dev-User-Id: {{adminUserId}}
+X-Dev-Roles: admin
+Content-Type: application/json
+
+{
+  "subject_template": "Verify your email address - ERP System",
+  "html_template": "<p>Hello {{name}},</p><p>Your code is: <b>{{otp_code}}</b></p>",
+  "text_template": "Hello {{name}},\n\nYour code is: {{otp_code}}",
+  "declared_variables": ["name", "otp_code"],
+  "sensitive_variables": ["otp_code"]
+}
+
+### 23. Email - Preview Template (Admin or Manager)
+POST {{baseUrl}}/email/templates/auth.verify_email_otp/preview
+Authorization: Bearer {{authToken}}
+X-Dev-User-Id: {{devUserId}}
+X-Dev-Roles: manager
+Content-Type: application/json
+
+{
+  "variables": {
+    "name": "Jane Doe",
+    "otp_code": "951234"
+  }
+}
+
+### 24. Email - Activate Template Version (Admin only)
+POST {{baseUrl}}/email/templates/auth.verify_email_otp/activate
+Authorization: Bearer {{authToken}}
+X-Dev-User-Id: {{adminUserId}}
+X-Dev-Roles: admin
+Content-Type: application/json
+
+{
+  "version": 2
+}
+
+### 25. Email - List Messages (Filtered & Scoped)
+GET {{baseUrl}}/email/messages?page=1&page_size=20&sort=-created_at&status=sent
+Authorization: Bearer {{authToken}}
+X-Dev-User-Id: {{devUserId}}
+X-Dev-Roles: employee
+
+### 26. Email - Get Message Details
+@messageId = 3a0bfdcd-b42d-4e97-aeba-ce8e50674b3a
+GET {{baseUrl}}/email/messages/{{messageId}}
+Authorization: Bearer {{authToken}}
+X-Dev-User-Id: {{devUserId}}
+X-Dev-Roles: employee
+
+### 27. Email - Resend Failed or Bounced Message
+POST {{baseUrl}}/email/messages/{{messageId}}/resend
+Authorization: Bearer {{authToken}}
+X-Dev-User-Id: {{devUserId}}
+X-Dev-Roles: employee
+
+### 28. Email - Cancel Queued Message
+POST {{baseUrl}}/email/messages/{{messageId}}/cancel
+Authorization: Bearer {{authToken}}
+X-Dev-User-Id: {{devUserId}}
+X-Dev-Roles: employee
+
+### 29. Email - List Suppressions (Admin or Manager)
+GET {{baseUrl}}/email/suppressions
+Authorization: Bearer {{authToken}}
+X-Dev-User-Id: {{devUserId}}
+X-Dev-Roles: manager
+
+### 30. Email - Add Address to Suppression List (Admin only)
+POST {{baseUrl}}/email/suppressions
+Authorization: Bearer {{authToken}}
+X-Dev-User-Id: {{adminUserId}}
+X-Dev-Roles: admin
+Content-Type: application/json
+
+{
+  "email": "bounced.user@example.com",
+  "reason": "hard_bounce"
+}
+
+### 31. Email - Remove Address from Suppression List (Admin only)
+DELETE {{baseUrl}}/email/suppressions/bounced.user@example.com
+Authorization: Bearer {{authToken}}
+X-Dev-User-Id: {{adminUserId}}
+X-Dev-Roles: admin
+
+### 32. Internal - High-Priority Transactional Email Dispatch
+POST {{baseUrl}}/internal/email/send
+X-Internal-Token: {{internalToken}}
+Idempotency-Key: idemp-email-001
+Content-Type: application/json
+
+{
+  "template_key": "auth.verify_email_otp",
+  "to": ["user@example.com"],
+  "variables": {
+    "name": "Alex",
+    "otp_code": "847192"
+  },
+  "sensitive_variables": ["otp_code"],
+  "priority": "transactional"
+}
+
+### 33. Webhook - Provider Delivery / Bounce Callback
+POST {{baseUrl}}/webhooks/email/sendgrid
+X-Signature: c81dd7ea4144b6...
+Content-Type: application/json
+
+{
+  "event": "bounce",
+  "email": "invalid@example.com",
+  "provider_message_id": "msg-9999",
+  "hard": true,
+  "reason": "550 User unknown"
+}
+
+### 34. Admin - List Notification Rules
+GET {{baseUrl}}/admin/notification-rules
+Authorization: Bearer {{authToken}}
+X-Dev-User-Id: {{adminUserId}}
+X-Dev-Roles: admin
+
+### 35. Admin - Create Notification Rule
+POST {{baseUrl}}/admin/notification-rules
+Authorization: Bearer {{authToken}}
+X-Dev-User-Id: {{adminUserId}}
+X-Dev-Roles: admin
+Content-Type: application/json
+
+{
+  "event_type": "purchasing.po_approved",
+  "target_roles": ["purchasing", "finance"],
+  "type": "order_confirmed",
+  "category": "purchasing",
+  "priority": "normal",
+  "template_key": "tmpl_purchasing_po_approved",
+  "send_email": false,
+  "is_active": true
+}
+
+### 36. Admin - Get Notification Rule by ID
+@ruleId = 550e8400-e29b-41d4-a716-446655440000
+GET {{baseUrl}}/admin/notification-rules/{{ruleId}}
+Authorization: Bearer {{authToken}}
+X-Dev-User-Id: {{adminUserId}}
+X-Dev-Roles: admin
+
+### 37. Admin - Update Notification Rule
+PUT {{baseUrl}}/admin/notification-rules/{{ruleId}}
+Authorization: Bearer {{authToken}}
+X-Dev-User-Id: {{adminUserId}}
+X-Dev-Roles: admin
+If-Match: "c3ab8ff1"
+Content-Type: application/json
+
+{
+  "event_type": "purchasing.po_approved",
+  "target_roles": ["purchasing", "finance", "manager"],
+  "type": "order_confirmed",
+  "category": "purchasing",
+  "priority": "high",
+  "template_key": "tmpl_purchasing_po_approved",
+  "send_email": false,
+  "is_active": true
+}
+
+### 38. Admin - Deactivate Notification Rule
+DELETE {{baseUrl}}/admin/notification-rules/{{ruleId}}
+Authorization: Bearer {{authToken}}
+X-Dev-User-Id: {{adminUserId}}
+X-Dev-Roles: admin
+
+### 39. Admin - List Notification Templates
+GET {{baseUrl}}/admin/notification-templates
+Authorization: Bearer {{authToken}}
+X-Dev-User-Id: {{adminUserId}}
+X-Dev-Roles: admin
+
+### 40. Admin - Create Notification Template
+POST {{baseUrl}}/admin/notification-templates
+Authorization: Bearer {{authToken}}
+X-Dev-User-Id: {{adminUserId}}
+X-Dev-Roles: admin
+Content-Type: application/json
+
+{
+  "template_key": "tmpl_purchasing_po_approved",
+  "event_type": "purchasing.po_approved",
+  "locale": "en",
+  "title_template": "PO {{payload.po_number}} Approved",
+  "body_template": "Purchase Order {{payload.po_number}} for ${{payload.total_amount}} has been approved by {{actor_user_id}}."
+}
+
+### 41. Admin - Update Notification Template (New Version)
+PUT {{baseUrl}}/admin/notification-templates/tmpl_purchasing_po_approved
+Authorization: Bearer {{authToken}}
+X-Dev-User-Id: {{adminUserId}}
+X-Dev-Roles: admin
+If-Match: "1"
+Content-Type: application/json
+
+{
+  "locale": "en",
+  "title_template": "Purchase Order {{payload.po_number}} Approved",
+  "body_template": "Purchase Order {{payload.po_number}} totaling ${{payload.total_amount}} was approved by {{actor_user_id}}."
+}
+
+### 42. Admin - Test Send Notification
+POST {{baseUrl}}/admin/notifications/test-send
+Authorization: Bearer {{authToken}}
+X-Dev-User-Id: {{adminUserId}}
+X-Dev-Roles: admin
+Content-Type: application/json
+
+{
+  "user_id": "7b8e1460-63bf-4787-8e68-07df95a5f782",
+  "template_key": "tmpl_purchasing_po_approved",
+  "sample_payload": {
+    "po_number": "PO-TEST-999",
+    "total_amount": "12500.00"
+  }
+}
+
+### 43. Admin - List Notification Deliveries
+GET {{baseUrl}}/admin/notification-deliveries?status=sent&page=1&page_size=20
+Authorization: Bearer {{authToken}}
+X-Dev-User-Id: {{adminUserId}}
+X-Dev-Roles: admin
+
+### 44. Admin - Retry Notification Delivery
+@deliveryId = 8a0bfdcd-b42d-4e97-aeba-ce8e50674b3a
+POST {{baseUrl}}/admin/notification-deliveries/{{deliveryId}}/retry
+Authorization: Bearer {{authToken}}
+X-Dev-User-Id: {{adminUserId}}
+X-Dev-Roles: admin
+
+### 45. Admin - List Dead Letters
+GET {{baseUrl}}/admin/notification-dead-letters?page=1&page_size=20
+Authorization: Bearer {{authToken}}
+X-Dev-User-Id: {{adminUserId}}
+X-Dev-Roles: admin
+
+### 46. Admin - Replay Dead Letter
+@deadLetterId = 9b0bfdcd-b42d-4e97-aeba-ce8e50674b3b
+POST {{baseUrl}}/admin/notification-dead-letters/{{deadLetterId}}/replay
+Authorization: Bearer {{authToken}}
+X-Dev-User-Id: {{adminUserId}}
+X-Dev-Roles: admin
+
+### 47. Admin - Notification Aggregate Stats
+GET {{baseUrl}}/admin/notification-stats
+Authorization: Bearer {{authToken}}
+X-Dev-User-Id: {{adminUserId}}
+X-Dev-Roles: admin
+
+### 48. Admin - Kafka Consumer Status & Offset Lag
+GET {{baseUrl}}/admin/notification-consumer-status
+Authorization: Bearer {{authToken}}
+X-Dev-User-Id: {{adminUserId}}
+X-Dev-Roles: admin
+
+### 49. Operations - List Operations (Filtered by entity & paginated)
+GET {{baseUrl}}/operations?entity_type=sales_order&page=1&page_size=20
+Authorization: Bearer {{authToken}}
+X-Dev-User-Id: {{devUserId}}
+X-Dev-Roles: sales
+
+### 50. Operations - Get Operation by ID
+@operationId = 6c401311-64d8-4f1b-be75-2964b4c6e5a1
+GET {{baseUrl}}/operations/{{operationId}}
+Authorization: Bearer {{authToken}}
+X-Dev-User-Id: {{devUserId}}
+X-Dev-Roles: sales
+
+
+

@@ -1,0 +1,106 @@
+# Note: When the repository root is relocated, this workflow can be promoted to .github/workflows/notification-service.yml
+name: Notification Service CI
+
+on:
+  push:
+    branches: [ main, master, develop ]
+    paths:
+      - 'notification-service/**'
+  pull_request:
+    branches: [ main, master, develop ]
+    paths:
+      - 'notification-service/**'
+
+jobs:
+  test:
+    name: Build, Vet, Race & Integration Test
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: erp
+          POSTGRES_PASSWORD: erp_password
+          POSTGRES_DB: erp_notifications
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      kafka:
+        image: confluentinc/cp-kafka:7.5.0
+        env:
+          KAFKA_NODE_ID: 1
+          KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT'
+          KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092'
+          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+          KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+          KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+          KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+          KAFKA_PROCESS_ROLES: 'broker,controller'
+          KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka:29093'
+          KAFKA_LISTENERS: 'PLAINTEXT://0.0.0.0:29092,CONTROLLER://0.0.0.0:29093,PLAINTEXT_HOST://0.0.0.0:9092'
+          KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'
+          KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+          KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
+          CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
+        ports:
+          - 9092:9092
+
+    env:
+      DATABASE_URL: postgres://erp:erp_password@localhost:5432/erp_notifications?sslmode=disable
+      KAFKA_BROKERS: localhost:9092
+      JWT_SECRET: supersecretjwtkeyusedforintegrationtestingonly12345
+      EMAIL_ENCRYPTION_KEY: MTM4NDkyMDE4NDkyMDE4NDkyMDE4NDkyMDE4NDkyMDE=
+      ENV: test
+
+    defaults:
+      run:
+        working-directory: notification-service
+
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+
+      - name: Set up Go toolchain
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+          cache-dependency-path: notification-service/go.sum
+
+      - name: Wait for PostgreSQL and Kafka readiness
+        run: |
+          echo "Waiting for PostgreSQL..."
+          until pg_isready -h localhost -p 5432 -U erp; do
+            sleep 1
+          done
+          echo "PostgreSQL is ready."
+
+          echo "Waiting for Kafka..."
+          timeout 60 bash -c 'until nc -z localhost 9092; do sleep 1; done'
+          echo "Kafka is ready."
+
+      - name: Apply Database Migrations
+        run: |
+          sudo apt-get install -y postgresql-client
+          for f in $(ls -v migrations/*.up.sql); do
+            echo "Applying $f..."
+            PGPASSWORD=erp_password psql -h localhost -U erp -d erp_notifications -f "$f"
+          done
+
+      - name: Seed Database
+        run: go run cmd/seed/main.go
+
+      - name: Run Static Analysis (go vet)
+        run: go vet ./...
+
+      - name: Run Unit and Component Tests with Race Detector
+        run: go test -race -v -short ./...
+
+      - name: Run Full Pipeline Integration Tests
+        run: go test -race -v ./internal/integration/...

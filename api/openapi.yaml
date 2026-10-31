@@ -1,0 +1,2327 @@
+openapi: 3.0.3
+info:
+  title: Notification Service API
+  version: 0.2.0
+  description: |
+    Enterprise ERP Notification Service API managing in-app notifications, delivery channels,
+    preferences, real-time SSE streams, administrative controls, and outbound email processing.
+servers:
+  - url: http://localhost:8085
+    description: Local development server
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Standard JWT bearer token containing sub, roles, and email.
+    DevUserIdAuth:
+      type: apiKey
+      in: header
+      name: X-Dev-User-Id
+      description: Development mode user UUID override header.
+    InternalTokenAuth:
+      type: apiKey
+      in: header
+      name: X-Internal-Token
+      description: Internal service authentication token.
+
+  schemas:
+    ErrorDetail:
+      type: object
+      properties:
+        field:
+          type: string
+          example: channels.in_app.security
+        issue:
+          type: string
+          example: preference_locked
+      required:
+        - issue
+
+    ErrorEnvelope:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+            - request_id
+          properties:
+            code:
+              type: string
+              example: validation_failed
+            message:
+              type: string
+              example: Cannot disable mandatory notification channel
+            details:
+              type: array
+              items:
+                $ref: '#/components/schemas/ErrorDetail'
+            request_id:
+              type: string
+              format: uuid
+              example: b3ad6c56-78b1-4f33-8ec2-13dafc678a1c
+
+    PaginationMeta:
+      type: object
+      required:
+        - page
+        - page_size
+        - total_count
+        - total_pages
+      properties:
+        page:
+          type: integer
+          example: 1
+        page_size:
+          type: integer
+          example: 20
+        total_count:
+          type: integer
+          example: 45
+        total_pages:
+          type: integer
+          example: 3
+
+    EntityRef:
+      type: object
+      required:
+        - type
+        - id
+      properties:
+        type:
+          type: string
+          example: purchase_order
+        id:
+          type: string
+          format: uuid
+          example: 9d1c08be-2415-46aa-bd08-8e6ca6f0e495
+
+    Notification:
+      type: object
+      required:
+        - id
+        - type
+        - category
+        - priority
+        - title
+        - body
+        - status
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 7b8e1460-63bf-4787-8e68-07df95a5f782
+        type:
+          type: string
+          example: approval_pending
+        category:
+          type: string
+          example: approval
+        priority:
+          type: string
+          enum: [low, normal, high, critical]
+          example: normal
+        title:
+          type: string
+          example: Purchase Order PO-2026-0042 requires approval
+        body:
+          type: string
+          example: PO-2026-0042 from Fabric Corp totaling $14,250.00 is waiting for your review.
+        entity:
+          $ref: '#/components/schemas/EntityRef'
+        link:
+          type: string
+          nullable: true
+          example: /purchasing/orders/9d1c08be-2415-46aa-bd08-8e6ca6f0e495
+        correlation_id:
+          type: string
+          format: uuid
+          nullable: true
+          example: 8fa8db3b-8c65-4f7b-9e45-d8aa497f1981
+        status:
+          type: string
+          enum: [unread, read, archived]
+          example: unread
+        created_at:
+          type: string
+          format: date-time
+          example: 2026-10-12T09:30:00Z
+        read_at:
+          type: string
+          format: date-time
+          nullable: true
+          example: null
+
+    UnreadCountData:
+      type: object
+      required:
+        - total
+        - by_category
+      properties:
+        total:
+          type: integer
+          example: 5
+        by_category:
+          type: object
+          additionalProperties:
+            type: integer
+          example:
+            approval: 3
+            inventory: 1
+            security: 1
+
+    ChannelPreferences:
+      type: object
+      required:
+        - in_app
+        - email
+      properties:
+        in_app:
+          type: object
+          additionalProperties:
+            type: boolean
+          example:
+            approval: true
+            purchasing: true
+            inventory: true
+            security: true
+            saga: true
+        email:
+          type: object
+          additionalProperties:
+            type: boolean
+          example:
+            approval: true
+            purchasing: false
+            inventory: false
+            security: true
+
+    NotificationRule:
+      type: object
+      required: [id, event_type, target_roles, type, category, priority, template_key, is_active, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        event_type:
+          type: string
+        target_roles:
+          type: array
+          items:
+            type: string
+        target_user_path:
+          type: string
+          nullable: true
+        type:
+          type: string
+        category:
+          type: string
+        priority:
+          type: string
+          enum: [low, normal, high, critical]
+        link_template:
+          type: string
+          nullable: true
+        template_key:
+          type: string
+        send_email:
+          type: boolean
+        email_template_key:
+          type: string
+          nullable: true
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    CreateNotificationRuleRequest:
+      type: object
+      required: [event_type, target_roles, type, category, priority, template_key]
+      properties:
+        event_type:
+          type: string
+        target_roles:
+          type: array
+          items:
+            type: string
+        target_user_path:
+          type: string
+        type:
+          type: string
+        category:
+          type: string
+        priority:
+          type: string
+          enum: [low, normal, high, critical]
+        link_template:
+          type: string
+        template_key:
+          type: string
+        send_email:
+          type: boolean
+        email_template_key:
+          type: string
+        is_active:
+          type: boolean
+
+    NotificationTemplate:
+      type: object
+      required: [id, template_key, event_type, locale, title_template, body_template, version, is_active, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        template_key:
+          type: string
+        event_type:
+          type: string
+        locale:
+          type: string
+        title_template:
+          type: string
+        body_template:
+          type: string
+        version:
+          type: integer
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    CreateNotificationTemplateRequest:
+      type: object
+      required: [template_key, event_type, title_template, body_template]
+      properties:
+        template_key:
+          type: string
+        event_type:
+          type: string
+        locale:
+          type: string
+        title_template:
+          type: string
+        body_template:
+          type: string
+
+    UpdateNotificationTemplateRequest:
+      type: object
+      required: [title_template, body_template]
+      properties:
+        event_type:
+          type: string
+        locale:
+          type: string
+        title_template:
+          type: string
+        body_template:
+          type: string
+
+    NotificationDelivery:
+      type: object
+      required: [id, notification_id, channel, status, attempts, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        notification_id:
+          type: string
+          format: uuid
+        channel:
+          type: string
+          enum: [in_app, email]
+        status:
+          type: string
+          enum: [pending, sent, failed, dead]
+        attempts:
+          type: integer
+        next_retry_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_error:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    NotificationDeadLetter:
+      type: object
+      required: [id, source, error, failed_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        source:
+          type: string
+          enum: [kafka, http]
+        topic:
+          type: string
+          nullable: true
+        partition:
+          type: integer
+          nullable: true
+        kafka_offset:
+          type: integer
+          nullable: true
+        raw_event:
+          type: object
+        error:
+          type: string
+        failed_at:
+          type: string
+          format: date-time
+        replayed_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    Operation:
+      type: object
+      required: [id, type, entity, state, correlation_id, started_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 6c401311-64d8-4f1b-be75-2964b4c6e5a1
+        type:
+          type: string
+          example: sales_order.confirm
+        entity:
+          $ref: '#/components/schemas/EntityRef'
+        state:
+          type: string
+          enum: [pending, succeeded, failed, compensating, compensated]
+          example: failed
+        error:
+          type: object
+          nullable: true
+          properties:
+            code:
+              type: string
+              example: insufficient_stock
+            message:
+              type: string
+              example: Only 6 available
+            details:
+              type: array
+              items:
+                $ref: '#/components/schemas/ErrorDetail'
+        compensation:
+          type: string
+          nullable: true
+          example: completed
+        correlation_id:
+          type: string
+          format: uuid
+          example: 8fa8db3b-8c65-4f7b-9e45-d8aa497f1981
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+          nullable: true
+
+security:
+  - BearerAuth: []
+  - DevUserIdAuth: []
+
+paths:
+  /operations:
+    get:
+      summary: List Operations
+      description: Retrieve paginated distributed operations. Caller must be the actor or have admin/manager role.
+      tags: [Operations]
+      parameters:
+        - in: query
+          name: entity_type
+          schema:
+            type: string
+          description: Filter by domain entity type (e.g. sales_order)
+        - in: query
+          name: entity_id
+          schema:
+            type: string
+            format: uuid
+          description: Filter by entity UUID
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: page_size
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Paginated list of operations
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Operation'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+        '401':
+          $ref: '#/components/responses/401Error'
+
+  /operations/{id}:
+    get:
+      summary: Get Operation by ID
+      description: Retrieve status of an asynchronous action. Caller must be the actor, admin, or manager; otherwise returns 404.
+      tags: [Operations]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Operation details
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Operation'
+        '401':
+          $ref: '#/components/responses/401Error'
+        '404':
+          $ref: '#/components/responses/404Error'
+
+  /health/live:
+    get:
+      summary: Liveness Probe
+      description: Returns alive when the HTTP service process is running.
+      security: []
+      responses:
+        '200':
+          description: Service process alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: alive
+
+  /health/ready:
+    get:
+      summary: Readiness Probe
+      description: Returns ready when the database connection pool is active.
+      security: []
+      responses:
+        '200':
+          description: Service is healthy and database is connected
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ready
+                  database:
+                    type: string
+                    example: connected
+                  kafka:
+                    type: string
+                    example: connected
+        '503':
+          description: Service unready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: unready
+                  database:
+                    type: string
+                    example: disconnected
+                  kafka:
+                    type: string
+                    example: disconnected
+
+  /health/version:
+    get:
+      summary: Version Information
+      description: Returns runtime build information and API version.
+      security: []
+      responses:
+        '200':
+          description: Service version info
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version:
+                    type: string
+                    example: 0.2.0
+                  service:
+                    type: string
+                    example: notification-service
+
+  /notifications:
+    get:
+      summary: List notifications
+      description: Query paginated in-app notifications scoped to authenticated caller.
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: sort
+          in: query
+          schema:
+            type: string
+            default: -created_at
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [unread, read, archived]
+        - name: category
+          in: query
+          schema:
+            type: string
+        - name: priority
+          in: query
+          schema:
+            type: string
+            enum: [low, normal, high, critical]
+        - name: type
+          in: query
+          schema:
+            type: string
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Paginated notification list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Notification'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+        '401':
+          $ref: '#/components/responses/401Error'
+
+  /notifications/unread-count:
+    get:
+      summary: Get unread notification counts
+      description: Retrieve total unread notifications and category breakdown for caller.
+      responses:
+        '200':
+          description: Unread counts breakdown
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/UnreadCountData'
+        '401':
+          $ref: '#/components/responses/401Error'
+
+  /notifications/{id}:
+    get:
+      summary: Get notification by ID
+      description: Retrieve single notification scoped to caller. Another user's notification returns 404.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Notification details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Notification'
+        '404':
+          $ref: '#/components/responses/404Error'
+        '401':
+          $ref: '#/components/responses/401Error'
+
+  /notifications/{id}/read:
+    post:
+      summary: Mark notification as read
+      description: Transitions status from unread to read. Returns 409 if currently archived.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Updated notification status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      status:
+                        type: string
+                        example: read
+                      read_at:
+                        type: string
+                        format: date-time
+        '404':
+          $ref: '#/components/responses/404Error'
+        '409':
+          $ref: '#/components/responses/409Error'
+        '429':
+          $ref: '#/components/responses/429Error'
+
+  /notifications/{id}/unread:
+    post:
+      summary: Mark notification as unread
+      description: Reverts status from read to unread. Returns 409 if currently archived.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Updated notification status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      status:
+                        type: string
+                        example: unread
+                      read_at:
+                        type: string
+                        nullable: true
+        '404':
+          $ref: '#/components/responses/404Error'
+        '409':
+          $ref: '#/components/responses/409Error'
+        '429':
+          $ref: '#/components/responses/429Error'
+
+  /notifications/{id}/archive:
+    post:
+      summary: Archive notification
+      description: Archives notification from any status.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Archived notification status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      status:
+                        type: string
+                        example: archived
+        '404':
+          $ref: '#/components/responses/404Error'
+        '429':
+          $ref: '#/components/responses/429Error'
+
+  /notifications/read-all:
+    post:
+      summary: Mark all notifications as read
+      description: Marks all unread notifications (or those within an optional category) as read.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                category:
+                  type: string
+                  example: approval
+      responses:
+        '200':
+          description: Count of updated notifications
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      updated_count:
+                        type: integer
+                        example: 3
+        '401':
+          $ref: '#/components/responses/401Error'
+        '429':
+          $ref: '#/components/responses/429Error'
+
+  /me/notification-preferences:
+    get:
+      summary: Get user notification channel preferences
+      description: Retrieve channel preferences grouped by in_app and email.
+      responses:
+        '200':
+          description: Current user preferences
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ChannelPreferences'
+        '401':
+          $ref: '#/components/responses/401Error'
+    put:
+      summary: Update user notification channel preferences
+      description: Replaces entire set. Locked channels (security, saga, approval in-app) return 422 if disabled.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                channels:
+                  $ref: '#/components/schemas/ChannelPreferences'
+      responses:
+        '200':
+          description: Updated preferences
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ChannelPreferences'
+        '422':
+          description: Mandatory channel disabled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '401':
+          $ref: '#/components/responses/401Error'
+        '429':
+          $ref: '#/components/responses/429Error'
+
+  /notifications/stream-ticket:
+    post:
+      summary: "Issue SSE single-use stream ticket"
+      description: Issues short-lived ticket to authenticate real-time SSE stream connection.
+      responses:
+        '200':
+          description: Stream ticket generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      ticket:
+                        type: string
+                        example: st_9f83ac045e0fbc4a3c18b762
+                      expires_in:
+                        type: integer
+                        example: 30
+
+  /notifications/stream:
+    get:
+      summary: "Real-time SSE Stream"
+      description: Real-time Server-Sent Events stream for caller notifications.
+      parameters:
+        - name: ticket
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Event stream established
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+  # --- Admin Endpoints ---
+  /admin/notification-rules:
+    get:
+      summary: List notification rules
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: List of routing rules
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/NotificationRule'
+        '401':
+          $ref: '#/components/responses/401Error'
+        '403':
+          $ref: '#/components/responses/403Error'
+    post:
+      summary: Create notification rule
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateNotificationRuleRequest'
+      responses:
+        '201':
+          description: Rule created
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/NotificationRule'
+        '400':
+          $ref: '#/components/responses/400Error'
+        '401':
+          $ref: '#/components/responses/401Error'
+        '403':
+          $ref: '#/components/responses/403Error'
+
+  /admin/notification-rules/{id}:
+    get:
+      summary: Get notification rule
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Rule details
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/NotificationRule'
+        '401':
+          $ref: '#/components/responses/401Error'
+        '403':
+          $ref: '#/components/responses/403Error'
+        '404':
+          $ref: '#/components/responses/404Error'
+    put:
+      summary: Update notification rule
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: If-Match
+          in: header
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateNotificationRuleRequest'
+      responses:
+        '200':
+          description: Rule updated
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/NotificationRule'
+        '400':
+          $ref: '#/components/responses/400Error'
+        '401':
+          $ref: '#/components/responses/401Error'
+        '403':
+          $ref: '#/components/responses/403Error'
+        '404':
+          $ref: '#/components/responses/404Error'
+        '409':
+          description: Version conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    delete:
+      summary: Deactivate notification rule
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Rule deactivated
+        '401':
+          $ref: '#/components/responses/401Error'
+        '403':
+          $ref: '#/components/responses/403Error'
+        '404':
+          $ref: '#/components/responses/404Error'
+
+  /admin/notification-rules/{id}/deactivate:
+    post:
+      summary: Deactivate notification rule
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Rule deactivated
+        '401':
+          $ref: '#/components/responses/401Error'
+        '403':
+          $ref: '#/components/responses/403Error'
+        '404':
+          $ref: '#/components/responses/404Error'
+
+  /admin/notification-templates:
+    get:
+      summary: List notification templates
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Template list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/NotificationTemplate'
+        '401':
+          $ref: '#/components/responses/401Error'
+        '403':
+          $ref: '#/components/responses/403Error'
+    post:
+      summary: Create notification template
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateNotificationTemplateRequest'
+      responses:
+        '201':
+          description: Template created
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/NotificationTemplate'
+        '400':
+          $ref: '#/components/responses/400Error'
+        '401':
+          $ref: '#/components/responses/401Error'
+        '403':
+          $ref: '#/components/responses/403Error'
+
+  /admin/notification-templates/{key}:
+    put:
+      summary: Update notification template
+      description: Creates a new incremented version of the template and deactivates earlier versions.
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: If-Match
+          in: header
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateNotificationTemplateRequest'
+      responses:
+        '200':
+          description: Template version incremented
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/NotificationTemplate'
+        '400':
+          $ref: '#/components/responses/400Error'
+        '401':
+          $ref: '#/components/responses/401Error'
+        '403':
+          $ref: '#/components/responses/403Error'
+        '409':
+          description: Version conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /admin/notifications/test-send:
+    post:
+      summary: Trigger test notification dispatch
+      description: Renders template and dispatches an in-app test notification flagged is_test=true.
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - user_id
+                - template_key
+              properties:
+                user_id:
+                  type: string
+                  format: uuid
+                template_key:
+                  type: string
+                sample_payload:
+                  type: object
+      responses:
+        '200':
+          description: Test send completed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      delivered:
+                        type: boolean
+                        example: true
+                      channels:
+                        type: array
+                        items:
+                          type: string
+                        example: ["in_app"]
+        '400':
+          $ref: '#/components/responses/400Error'
+        '401':
+          $ref: '#/components/responses/401Error'
+        '403':
+          $ref: '#/components/responses/403Error'
+        '404':
+          $ref: '#/components/responses/404Error'
+
+  /admin/notification-deliveries:
+    get:
+      summary: List delivery audit logs
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, sent, failed, dead]
+        - name: channel
+          in: query
+          schema:
+            type: string
+            enum: [in_app, email]
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Delivery logs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/NotificationDelivery'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+        '401':
+          $ref: '#/components/responses/401Error'
+        '403':
+          $ref: '#/components/responses/403Error'
+
+  /admin/notification-deliveries/{id}/retry:
+    post:
+      summary: Retry failed delivery attempt
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Delivery re-queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/NotificationDelivery'
+        '401':
+          $ref: '#/components/responses/401Error'
+        '403':
+          $ref: '#/components/responses/403Error'
+        '404':
+          $ref: '#/components/responses/404Error'
+        '409':
+          description: Invalid state transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /admin/notification-dead-letters:
+    get:
+      summary: List consumer dead letters
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Dead letters list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/NotificationDeadLetter'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+        '401':
+          $ref: '#/components/responses/401Error'
+        '403':
+          $ref: '#/components/responses/403Error'
+
+  /admin/notification-dead-letters/{id}/replay:
+    post:
+      summary: Replay dead letter event
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Dead letter replayed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      replayed:
+                        type: boolean
+                        example: true
+                      id:
+                        type: string
+                        format: uuid
+                      event_id:
+                        type: string
+                        format: uuid
+        '400':
+          $ref: '#/components/responses/400Error'
+        '401':
+          $ref: '#/components/responses/401Error'
+        '403':
+          $ref: '#/components/responses/403Error'
+        '404':
+          $ref: '#/components/responses/404Error'
+        '409':
+          description: Invalid state transition (already replayed)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /admin/notification-stats:
+    get:
+      summary: Query notification aggregate metrics
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Metrics summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      by_category:
+                        type: object
+                        additionalProperties:
+                          type: integer
+                      by_priority:
+                        type: object
+                        additionalProperties:
+                          type: integer
+                      delivery_success_rate:
+                        type: number
+                        format: float
+                        example: 0.985
+                      total_deliveries:
+                        type: integer
+                        example: 100
+                      successful_deliveries:
+                        type: integer
+                        example: 98
+                      dead_letters_count:
+                        type: integer
+                        example: 0
+                      email_failures_count:
+                        type: integer
+                        example: 1
+                      period:
+                        type: string
+                        example: 24h
+        '401':
+          $ref: '#/components/responses/401Error'
+        '403':
+          $ref: '#/components/responses/403Error'
+
+  /admin/notification-consumer-status:
+    get:
+      summary: Kafka consumer status and offsets
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Consumer offset lag and status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      group_id:
+                        type: string
+                        example: notification-service
+                      state:
+                        type: string
+                        example: running
+                      topics:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            topic:
+                              type: string
+                            partitions:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  partition:
+                                    type: integer
+                                  committed_offset:
+                                    type: integer
+                                  end_offset:
+                                    type: integer
+                                  lag:
+                                    type: integer
+                      last_message_at:
+                        type: string
+                        format: date-time
+                      processed_total:
+                        type: integer
+                      retried_total:
+                        type: integer
+                      dlq_total:
+                        type: integer
+                      failed_total:
+                        type: integer
+        '401':
+          $ref: '#/components/responses/401Error'
+        '403':
+          $ref: '#/components/responses/403Error'
+
+  /admin/email-settings:
+    get:
+      summary: Get email server configuration
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Email settings without plaintext password
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/EmailSettings'
+        '401':
+          $ref: '#/components/responses/401Error'
+        '403':
+          $ref: '#/components/responses/403Error'
+    put:
+      summary: Update email server configuration
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                provider:
+                  type: string
+                  example: smtp
+                host:
+                  type: string
+                  example: smtp.example.com
+                port:
+                  type: integer
+                  example: 587
+                username:
+                  type: string
+                  example: smtp_user
+                password:
+                  type: string
+                  example: new_smtp_password
+                from_name:
+                  type: string
+                  example: ERP Notification System
+                from_address:
+                  type: string
+                  format: email
+                  example: notifications@example.com
+                reply_to:
+                  type: string
+                  format: email
+                  example: support@example.com
+                tls_mode:
+                  type: string
+                  enum: [none, starttls, ssl_tls]
+                daily_limit:
+                  type: integer
+                  example: 10000
+                enabled:
+                  type: boolean
+                  example: true
+      responses:
+        '200':
+          description: Email configuration updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/EmailSettings'
+        '400':
+          $ref: '#/components/responses/400Error'
+        '401':
+          $ref: '#/components/responses/401Error'
+        '403':
+          $ref: '#/components/responses/403Error'
+
+  /admin/email-settings/test:
+    post:
+      summary: Test SMTP server connection
+      tags: [Admin]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [to]
+              properties:
+                to:
+                  type: string
+                  format: email
+                  example: admin@example.com
+      responses:
+        '200':
+          description: SMTP test successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      delivered:
+                        type: boolean
+                        example: true
+                      provider_message_id:
+                        type: string
+                        example: msg-12345
+        '400':
+          $ref: '#/components/responses/400Error'
+        '401':
+          $ref: '#/components/responses/401Error'
+        '403':
+          $ref: '#/components/responses/403Error'
+        '502':
+          description: Downstream mail delivery provider failure
+
+  # --- Email Management Endpoints ---
+  /email/templates:
+    get:
+      summary: List email templates
+      tags: [Email]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Email templates list with active versions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        template_key:
+                          type: string
+                          example: auth.verify_email_otp
+                        active_version:
+                          type: integer
+                          example: 1
+                        subject_template:
+                          type: string
+                          example: Verify your email address
+                        declared_variables:
+                          type: array
+                          items:
+                            type: string
+                        sensitive_variables:
+                          type: array
+                          items:
+                            type: string
+                        is_active:
+                          type: boolean
+        '401':
+          $ref: '#/components/responses/401Error'
+        '403':
+          $ref: '#/components/responses/403Error'
+
+  /email/templates/{key}:
+    get:
+      summary: Get email template details
+      tags: [Email]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+            example: auth.verify_email_otp
+      responses:
+        '200':
+          description: Email template details and versions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      template_key:
+                        type: string
+                      version:
+                        type: integer
+                      subject_template:
+                        type: string
+                      html_template:
+                        type: string
+                      text_template:
+                        type: string
+                      declared_variables:
+                        type: array
+                        items:
+                          type: string
+                      sensitive_variables:
+                        type: array
+                        items:
+                          type: string
+                      is_active:
+                        type: boolean
+                      versions:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            version:
+                              type: integer
+                            is_active:
+                              type: boolean
+                            created_at:
+                              type: string
+                              format: date-time
+        '401':
+          $ref: '#/components/responses/401Error'
+        '403':
+          $ref: '#/components/responses/403Error'
+        '404':
+          $ref: '#/components/responses/404Error'
+    put:
+      summary: Create new email template draft version
+      tags: [Email]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+            example: auth.verify_email_otp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subject_template, html_template, text_template, declared_variables]
+              properties:
+                subject_template:
+                  type: string
+                html_template:
+                  type: string
+                text_template:
+                  type: string
+                declared_variables:
+                  type: array
+                  items:
+                    type: string
+                sensitive_variables:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '201':
+          description: Version created
+        '400':
+          $ref: '#/components/responses/400Error'
+        '401':
+          $ref: '#/components/responses/401Error'
+        '403':
+          $ref: '#/components/responses/403Error'
+
+  /email/templates/{key}/preview:
+    post:
+      summary: Preview rendered email template
+      tags: [Email]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+            example: auth.verify_email_otp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                variables:
+                  type: object
+      responses:
+        '200':
+          description: Rendered preview HTML and text
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      subject:
+                        type: string
+                      html:
+                        type: string
+                      text:
+                        type: string
+        '400':
+          $ref: '#/components/responses/400Error'
+        '401':
+          $ref: '#/components/responses/401Error'
+        '403':
+          $ref: '#/components/responses/403Error'
+        '404':
+          $ref: '#/components/responses/404Error'
+
+  /email/templates/{key}/activate:
+    post:
+      summary: Promote email template version to active
+      tags: [Email]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+            example: auth.verify_email_otp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version]
+              properties:
+                version:
+                  type: integer
+                  example: 2
+      responses:
+        '200':
+          description: Version activated
+        '400':
+          $ref: '#/components/responses/400Error'
+        '401':
+          $ref: '#/components/responses/401Error'
+        '403':
+          $ref: '#/components/responses/403Error'
+        '404':
+          $ref: '#/components/responses/404Error'
+
+  /email/messages:
+    get:
+      summary: List outbound email messages
+      tags: [Email]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [queued, sending, sent, delivered, failed, bounced, suppressed, cancelled]
+        - name: template_key
+          in: query
+          schema:
+            type: string
+        - name: to
+          in: query
+          schema:
+            type: string
+        - name: related_type
+          in: query
+          schema:
+            type: string
+        - name: related_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to_date
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: sort
+          in: query
+          schema:
+            type: string
+            example: -created_at
+      responses:
+        '200':
+          description: Filtered email message audit list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/EmailMessage'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+        '401':
+          $ref: '#/components/responses/401Error'
+
+  /email/messages/{id}:
+    get:
+      summary: Get email message details
+      tags: [Email]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Email message detail
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/EmailMessage'
+        '401':
+          $ref: '#/components/responses/401Error'
+        '404':
+          $ref: '#/components/responses/404Error'
+
+  /email/messages/{id}/resend:
+    post:
+      summary: Re-queue failed or bounced email
+      tags: [Email]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Message re-queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/EmailMessage'
+        '401':
+          $ref: '#/components/responses/401Error'
+        '404':
+          $ref: '#/components/responses/404Error'
+        '409':
+          $ref: '#/components/responses/409Error'
+
+  /email/messages/{id}/cancel:
+    post:
+      summary: Cancel queued email
+      tags: [Email]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Message cancelled
+        '401':
+          $ref: '#/components/responses/401Error'
+        '404':
+          $ref: '#/components/responses/404Error'
+        '409':
+          $ref: '#/components/responses/409Error'
+
+  /email/suppressions:
+    get:
+      summary: List email suppression list
+      tags: [Email]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Suppression list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        email:
+                          type: string
+                        reason:
+                          type: string
+                          enum: [hard_bounce, complaint, manual]
+                        created_at:
+                          type: string
+                          format: date-time
+        '401':
+          $ref: '#/components/responses/401Error'
+        '403':
+          $ref: '#/components/responses/403Error'
+    post:
+      summary: Add address to suppression list
+      tags: [Email]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+                reason:
+                  type: string
+                  enum: [hard_bounce, complaint, manual]
+      responses:
+        '201':
+          description: Address added
+        '400':
+          $ref: '#/components/responses/400Error'
+        '401':
+          $ref: '#/components/responses/401Error'
+        '403':
+          $ref: '#/components/responses/403Error'
+
+  /email/suppressions/{email}:
+    delete:
+      summary: Remove address from suppression list
+      tags: [Email]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: email
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Address removed
+        '401':
+          $ref: '#/components/responses/401Error'
+        '403':
+          $ref: '#/components/responses/403Error'
+        '404':
+          $ref: '#/components/responses/404Error'
+
+  # --- Internal Endpoints ---
+  /internal/events:
+    post:
+      summary: HTTP event ingestion (Dev/Test only)
+      tags: [Internal]
+      security:
+        - InternalTokenAuth: []
+      responses:
+        '202':
+          description: Event accepted
+        '400':
+          $ref: '#/components/responses/400Error'
+
+  /internal/email/send:
+    post:
+      summary: High-priority transactional email dispatch
+      tags: [Internal]
+      security:
+        - InternalTokenAuth: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [template_key, to]
+              properties:
+                template_key:
+                  type: string
+                  example: auth.verify_email_otp
+                to:
+                  type: array
+                  items:
+                    type: string
+                    format: email
+                cc:
+                  type: array
+                  items:
+                    type: string
+                    format: email
+                variables:
+                  type: object
+                sensitive_variables:
+                  type: array
+                  items:
+                    type: string
+                priority:
+                  type: string
+                  enum: [transactional, business]
+                expires_at:
+                  type: string
+                  format: date-time
+                attachments:
+                  type: array
+                  items:
+                    type: object
+      responses:
+        '202':
+          description: Email queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      message_id:
+                        type: string
+                        format: uuid
+                      status:
+                        type: string
+                        example: queued
+        '400':
+          $ref: '#/components/responses/400Error'
+        '409':
+          $ref: '#/components/responses/409Error'
+        '429':
+          $ref: '#/components/responses/429Error'
+
+  # --- Webhook Endpoints ---
+  /webhooks/email/{provider}:
+    post:
+      summary: Provider email webhook handler
+      tags: [Webhooks]
+      security: []
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema:
+            type: string
+            example: sendgrid
+        - name: X-Signature
+          in: header
+          required: true
+          schema:
+            type: string
+          description: HMAC-SHA256 signature computed over request body using WEBHOOK_SECRET
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [event, email, provider_message_id]
+              properties:
+                event:
+                  type: string
+                  enum: [bounce, complaint, delivered]
+                email:
+                  type: string
+                  format: email
+                provider_message_id:
+                  type: string
+                reason:
+                  type: string
+                hard:
+                  type: boolean
+      responses:
+        '200':
+          description: Webhook processed
+        '400':
+          $ref: '#/components/responses/400Error'
+        '401':
+          $ref: '#/components/responses/401Error'
+
+components:
+  responses:
+    400Error:
+      description: Validation Failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    401Error:
+      description: Unauthenticated
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    403Error:
+      description: Forbidden Role
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    404Error:
+      description: Resource Not Found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    409Error:
+      description: Invalid State Transition
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    429Error:
+      description: Rate Limit Exceeded
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+          description: Seconds to wait before retrying
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
